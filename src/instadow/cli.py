@@ -9,6 +9,7 @@ from .downloader import DownloadOptions, download
 
 
 SUPPORTED_HOSTS = {"instagram.com", "www.instagram.com", "m.instagram.com", "instagr.am"}
+SUPPORTED_MEDIA_TYPES = {"p", "reel", "reels", "tv"}
 
 
 def instagram_url(value: str) -> str:
@@ -25,6 +26,13 @@ def instagram_url(value: str) -> str:
 
     if not parsed.path or parsed.path == "/":
         raise argparse.ArgumentTypeError("URL Instagram chua co duong dan bai post hoac reel.")
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0].lower() not in SUPPORTED_MEDIA_TYPES:
+        raise argparse.ArgumentTypeError(
+            "Chi ho tro URL media cu the cua Instagram nhu /p/<id>/, /reel/<id>/ hoac /tv/<id>/. "
+            "Link profile /<username>/ chua duoc ho tro."
+        )
 
     return candidate
 
@@ -116,4 +124,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

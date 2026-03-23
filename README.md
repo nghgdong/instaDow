@@ -8,6 +8,7 @@
 - Public Instagram reel URLs
 - Carousel posts (se tai tung item trong bai viet)
 - Tuy chon luu caption, thumbnail va su dung cookies file khi URL can dang nhap
+- Chua ho tro profile URLs nhu `https://www.instagram.com/<username>/`
 
 ## Cai dat
 
@@ -56,6 +57,12 @@ Dung cookies da export neu URL can dang nhap:
 
 ```powershell
 instadow --cookies-file .\cookies.txt https://www.instagram.com/p/POST_ID/
+```
+
+Neu dua vao link profile, tool se bao loi ngay va yeu cau dung link media cu the:
+
+```powershell
+instadow https://www.instagram.com/username/
 ```
 
 ## Ghi chu

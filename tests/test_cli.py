@@ -17,6 +17,10 @@ class InstagramUrlTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "Instagram"):
             instagram_url("https://example.com/reel/abc123/")
 
+    def test_rejects_profile_urls(self) -> None:
+        with self.assertRaisesRegex(Exception, "Link profile"):
+            instagram_url("https://www.instagram.com/11_14_42/")
+
 
 class ParserTests(unittest.TestCase):
     def test_default_output_directory_is_downloads(self) -> None:
