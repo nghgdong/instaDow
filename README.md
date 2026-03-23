@@ -81,10 +81,11 @@ instadow --print-info username
 instadow --print-info https://www.instagram.com/reel/REEL_ID/
 ```
 
-Dung cookies da export neu media URL can dang nhap:
+Dung cookies da export neu media URL hoac profile can dang nhap:
 
 ```powershell
 instadow --cookies-file .\cookies.txt https://www.instagram.com/p/POST_ID/
+instadow --cookies-file .\instagram_cookies.txt 11_14_42
 ```
 
 Dang nhap de tai profile private hoac tang do on dinh khi tai profile:
@@ -109,6 +110,7 @@ instadow username --login your_instagram_username --session-file .\ig.session
 
 - Media URL truc tiep duoc tai bang `yt-dlp`.
 - Profile downloads duoc tai bang `instaloader`.
+- `--cookies-file` ho tro file cookie Netscape va co the duoc dung cho ca media URLs lan profile downloads.
 - Profile downloads co the yeu cau dang nhap, ngay ca voi mot so profile public, do thay doi rate-limit va co che truy cap cua Instagram.
 - Lan dau dung `--login`, tool se thu nap session truoc. Neu chua co session, no se hoi mat khau tuong tac va luu session de dung lai sau do.
 - Session login da luu se duoc nho lai trong cau hinh local cua user de nhung lan sau khong can truyen lai `--login`.

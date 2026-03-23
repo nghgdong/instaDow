@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from http.cookiejar import MozillaCookieJar
 import json
 import os
 from pathlib import Path
@@ -164,11 +165,35 @@ def _profile_info(profile) -> dict:
     }
 
 
+def _print_json(payload: dict) -> None:
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(json.dumps(payload, ensure_ascii=True, indent=2))
+
+
 def _collect_files(directory: Path) -> set[Path]:
     if not directory.exists():
         return set()
 
     return {path.resolve() for path in directory.rglob("*") if path.is_file()}
+
+
+def _download_profile_feed(loader, profile, feed, limit: int | None, fast_update: bool) -> int:
+    processed_count = 0
+
+    for post in feed:
+        if limit is not None and processed_count >= limit:
+            break
+
+        downloaded = loader.download_post(post, profile.username)
+        processed_count += 1
+
+        if fast_update and not downloaded:
+            break
+
+    return processed_count
 
 
 def _merge_results(target: DownloadResult, source: DownloadResult) -> None:
@@ -291,7 +316,30 @@ def _resolve_session_file(auth: ProfileAuth):
     return default_path
 
 
+def _load_instaloader_cookies(cookies_file: Path):
+    cookie_jar = MozillaCookieJar()
+    try:
+        cookie_jar.load(str(cookies_file), ignore_discard=True, ignore_expires=True)
+    except OSError as exc:
+        raise RuntimeError(f"Khong the doc cookies file `{cookies_file}`: {exc}") from exc
+
+    return cookie_jar
+
+
 def _login_instaloader(loader, options: DownloadOptions) -> str | None:
+    if options.cookies_file:
+        cookie_jar = _load_instaloader_cookies(options.cookies_file)
+        loader.context.update_cookies(cookie_jar)
+        active_user = loader.test_login()
+        if active_user is None:
+            raise RuntimeError(
+                f"Da nap cookies tu `{options.cookies_file}` nhung Instagram khong chap nhan session nay. "
+                "Hay export lai cookies moi hoac thu login/session khac."
+            )
+        if options.verbose:
+            print(f"Da nap cookies cho {active_user}")
+        return active_user
+
     auth = _resolve_profile_auth(options)
     if not auth:
         return None
@@ -359,7 +407,7 @@ def _download_media_targets(targets: list[DownloadTarget], options: DownloadOpti
                 inspected_items = 0
                 for url in urls:
                     info = ydl.extract_info(url, download=False)
-                    print(json.dumps(ydl.sanitize_info(info), ensure_ascii=False, indent=2))
+                    _print_json(ydl.sanitize_info(info))
                     inspected_items += 1
                 return DownloadResult(inspected_items=inspected_items)
 
@@ -427,7 +475,7 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
                 raise RuntimeError(f"Khong the doc thong tin profile `{profile_name}`: {exc}") from exc
 
             if options.print_info:
-                print(json.dumps(_profile_info(profile), ensure_ascii=False, indent=2))
+                _print_json(_profile_info(profile))
                 result.inspected_items += 1
                 result.downloaded_profiles.append(profile.username)
                 continue
@@ -436,21 +484,39 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
             before_files = _collect_files(target_directory)
 
             try:
-                loader.download_profiles(
-                    {profile},
-                    profile_pic=options.include_profile_pic,
-                    posts=True,
-                    fast_update=options.fast_update,
-                    raise_errors=True,
-                    max_count=options.profile_limit,
-                    reels=options.include_profile_reels,
+                if options.include_profile_pic:
+                    loader.download_profilepic(profile)
+
+                remaining = options.profile_limit
+                processed_posts = _download_profile_feed(
+                    loader,
+                    profile,
+                    profile.get_posts(),
+                    remaining,
+                    options.fast_update,
                 )
+
+                if remaining is not None:
+                    remaining = max(remaining - processed_posts, 0)
+
+                if options.include_profile_reels and (remaining is None or remaining > 0):
+                    _download_profile_feed(
+                        loader,
+                        profile,
+                        profile.get_reels(),
+                        remaining,
+                        options.fast_update,
+                    )
             except PrivateProfileNotFollowedException as exc:
                 raise RuntimeError(
                     f"Profile `{profile.username}` la private hoac can dang nhap. Thu lai voi `--login <instagram_username>`."
                 ) from exc
             except (LoginException, ConnectionException, InstaloaderException) as exc:
                 raise RuntimeError(f"Tai profile `{profile.username}` that bai: {exc}") from exc
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Tai profile `{profile.username}` that bai do Instagram tra ve du lieu khong day du hoac dang gioi han toc do: {exc}"
+                ) from exc
 
             after_files = _collect_files(target_directory)
             result.downloaded_profiles.append(profile.username)

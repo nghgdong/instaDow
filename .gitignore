@@ -5,4 +5,6 @@ __pycache__/
 build/
 dist/
 downloads/
-
+instagram_cookies.txt
+*.cookies.txt
+*.session

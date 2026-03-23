@@ -164,6 +164,29 @@ class ProfileDownloadTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "tam thoi tu choi yeu cau"):
                     _login_instaloader(DummyLoader(), DownloadOptions(output_dir=Path("downloads")))
 
+    def test_cookie_file_can_authenticate_profile_mode(self) -> None:
+        class DummyContext:
+            def __init__(self) -> None:
+                self.cookie = None
+
+            def update_cookies(self, cookie) -> None:
+                self.cookie = cookie
+
+        class DummyLoader:
+            def __init__(self) -> None:
+                self.context = DummyContext()
+
+            def test_login(self):
+                return "cookie_user"
+
+        with patch("instadow.downloader._load_instaloader_cookies", return_value={"sessionid": "abc"}):
+            active_user = _login_instaloader(
+                DummyLoader(),
+                DownloadOptions(output_dir=Path("downloads"), cookies_file=Path("instagram_cookies.txt")),
+            )
+
+        self.assertEqual(active_user, "cookie_user")
+
 
 if __name__ == "__main__":
     unittest.main()
