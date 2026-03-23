@@ -1,126 +1,311 @@
 # instaDow
 
-`instaDow` la mot CLI de tai post, reel va ca profile Instagram ve may tinh.
+`instaDow` la CLI de tai post, reel va profile Instagram ve may.
 
-## Ho tro
+Tool nay ho tro 2 nhom use case chinh:
 
-- Public Instagram post URLs
-- Public Instagram reel URLs
-- Public Instagram profile URLs
-- Instagram username targets nhu `nghgdong`
-- Carousel posts
-- Tuy chon luu caption, thumbnail, cookies cho media URLs va login/session cho profile downloads
+- Tai 1 media URL cu the nhu `/p/.../` hoac `/reel/.../`
+- Tai ca profile bang username hoac profile URL, co ho tro cookies/session de giam loi rate-limit
+
+## Tinh nang
+
+- Tai public post URLs
+- Tai public reel URLs
+- Tai profile bang username hoac profile URL
+- Tai carousel posts
+- Tai reels tab rieng voi `--reels-only`
+- Luu them caption voi `--write-caption`
+- Luu thumbnail voi `--write-thumbnail`
+- Xem metadata ma khong tai file voi `--print-info`
+- Dung `cookies.txt` Netscape format cho ca media URL va profile
+- Ho tro Instagram session qua `--login` va tu dong tai su dung session da luu
+
+## Yeu cau
+
+- Python 3.11 tro len
+- Windows, macOS hoac Linux co the chay Python va pip
 
 ## Cai dat
+
+Clone repo roi cai editable package:
 
 ```powershell
 python -m pip install -e .
 ```
 
-Sau khi cai dat, ban co the dung lenh `instadow` truc tiep hoac chay `python -m instadow`.
-
-## Cach dung
-
-Tai mot post hoac reel:
+Sau khi cai dat, ban co the chay:
 
 ```powershell
-instadow https://www.instagram.com/reel/ABC123/
-instadow https://www.instagram.com/p/POST_ID/
+instadow --help
 ```
 
-Tai mot profile bang link:
+hoac:
 
 ```powershell
-instadow https://www.instagram.com/username/
+python -m instadow --help
 ```
 
-Tai mot profile bang username:
+## Kien truc tai media
+
+- Media URL truc tiep duoc tai bang `yt-dlp`
+- Profile downloads duoc xu ly bang `instaloader` ket hop web session/cookies
+- Khi profile dung `--cookies-file`, tool uu tien goi Instagram profile feed API de lay feed thuong on dinh hon
+- Reels tab cua profile duoc quet rieng, vi vay neu muon chi lay reels thi nen dung `--reels-only`
+
+## Xac thuc
+
+### Cach 1: Cookies file, khuyen dung cho profile
+
+Neu ban da export duoc file Netscape cookies, day la cach on dinh nhat cho profile:
 
 ```powershell
-instadow username
+python -m instadow 11_14_42 --cookies-file .\instagram_cookies.txt
 ```
 
-Chi tai reels tu profile:
+File cookie hop le thuong co dang:
 
-```powershell
-instadow username --reels-only --cookies-file .\instagram_cookies.txt
+```text
+# Netscape HTTP Cookie File
+.instagram.com TRUE / TRUE ... sessionid ...
 ```
 
-Tai nhieu target cung luc:
+`--cookies-file` duoc ho tro cho:
+
+- media URL truc tiep
+- profile by username
+- profile by URL
+- `--reels-only`
+
+### Cach 2: Dang nhap bang username
+
+Neu khong co cookies file, ban co the cho tool login:
 
 ```powershell
-instadow `
+python -m instadow 11_14_42 --login your_instagram_username
+```
+
+Lan dau tool se login tuong tac va tao session. Cac lan sau tool se tu thu nap lai session da luu.
+
+### Cach 3: Session file rieng
+
+Neu muon tu quan ly session file:
+
+```powershell
+python -m instadow 11_14_42 --login your_instagram_username --session-file .\ig.session
+```
+
+### Session auto reuse
+
+Sau khi login thanh cong mot lan, tool se co gang:
+
+- nap lai session da luu trong local config
+- neu may chi co 1 Instaloader session, tool se tu phat hien va thu dung session do
+
+## Cach dung co ban
+
+### Tai 1 post
+
+```powershell
+python -m instadow https://www.instagram.com/p/POST_ID/
+```
+
+### Tai 1 reel
+
+```powershell
+python -m instadow https://www.instagram.com/reel/REEL_ID/
+```
+
+### Tai ca profile bang username
+
+```powershell
+python -m instadow 11_14_42 --cookies-file .\instagram_cookies.txt
+```
+
+### Tai ca profile bang URL
+
+```powershell
+python -m instadow https://www.instagram.com/11_14_42/ --cookies-file .\instagram_cookies.txt
+```
+
+### Chi tai reels tu profile
+
+```powershell
+python -m instadow 11_14_42 --reels-only --cookies-file .\instagram_cookies.txt
+```
+
+### Tai nhieu target cung luc
+
+```powershell
+python -m instadow `
   -o .\downloads `
   https://www.instagram.com/p/POST_ID/ `
   https://www.instagram.com/reel/REEL_ID/ `
-  username
+  11_14_42
 ```
 
-Gioi han so bai tai moi profile:
+## Cac vi du hay dung
+
+Tai profile va gioi han so bai:
 
 ```powershell
-instadow username --max-posts 20
+python -m instadow 11_14_42 --cookies-file .\instagram_cookies.txt --max-posts 20
 ```
 
-Cap nhat profile va dung khi gap item da tai truoc do:
+Chi tai reels va gioi han 5 reel:
 
 ```powershell
-instadow username --fast-update
+python -m instadow 11_14_42 --reels-only --cookies-file .\instagram_cookies.txt --max-posts 5
 ```
 
-Khong tai reels hoac avatar khi tai profile:
+Bo qua reels, chi lay feed thuong:
 
 ```powershell
-instadow username --no-reels --no-profile-pic
+python -m instadow 11_14_42 --no-reels --cookies-file .\instagram_cookies.txt
 ```
 
-Luu them caption va thumbnail:
+Bo qua avatar profile:
 
 ```powershell
-instadow --write-caption --write-thumbnail username
+python -m instadow 11_14_42 --no-profile-pic --cookies-file .\instagram_cookies.txt
 ```
 
-In metadata ma khong tai file:
+Luu them caption:
 
 ```powershell
-instadow --print-info username
-instadow --print-info https://www.instagram.com/reel/REEL_ID/
+python -m instadow 11_14_42 --write-caption --cookies-file .\instagram_cookies.txt
 ```
 
-Dung cookies da export neu media URL hoac profile can dang nhap:
+Luu them thumbnail:
 
 ```powershell
-instadow --cookies-file .\cookies.txt https://www.instagram.com/p/POST_ID/
-instadow --cookies-file .\instagram_cookies.txt 11_14_42
+python -m instadow 11_14_42 --write-thumbnail --cookies-file .\instagram_cookies.txt
 ```
 
-Dang nhap de tai profile private hoac tang do on dinh khi tai profile:
+Cap nhat profile va dung som neu gap item da tai:
 
 ```powershell
-instadow username --login your_instagram_username
+python -m instadow 11_14_42 --fast-update --cookies-file .\instagram_cookies.txt
 ```
 
-Sau khi login thanh cong mot lan, tool se nho session va tu dong thu nap lai o cac lan chay profile tiep theo. Luc do ban co the goi gon:
+In metadata profile ma khong tai:
 
 ```powershell
-instadow username
+python -m instadow 11_14_42 --print-info --cookies-file .\instagram_cookies.txt -v
 ```
 
-Neu muon dung session file rieng:
+Tai media URL can auth:
 
 ```powershell
-instadow username --login your_instagram_username --session-file .\ig.session
+python -m instadow --cookies-file .\instagram_cookies.txt https://www.instagram.com/p/POST_ID/
 ```
 
-## Ghi chu
+## Y nghia cac option chinh
 
-- Media URL truc tiep duoc tai bang `yt-dlp`.
-- Profile downloads duoc tai bang `instaloader`.
-- `--cookies-file` ho tro file cookie Netscape va co the duoc dung cho ca media URLs lan profile downloads.
-- Khi tai profile voi `--cookies-file`, tool uu tien goi Instagram profile feed API bang web session/cookies de on dinh hon GraphQL.
-- `--reels-only` bo qua feed thuong va chi quet tab reels cua profile.
-- Profile downloads co the yeu cau dang nhap, ngay ca voi mot so profile public, do thay doi rate-limit va co che truy cap cua Instagram.
-- Lan dau dung `--login`, tool se thu nap session truoc. Neu chua co session, no se hoi mat khau tuong tac va luu session de dung lai sau do.
-- Session login da luu se duoc nho lai trong cau hinh local cua user de nhung lan sau khong can truyen lai `--login`.
-- Neu may chi co dung 1 session Instaloader da luu, tool cung se tu phat hien va thu dung session do.
-- Tool nay phu hop nhat voi noi dung cong khai hoac noi dung ban co quyen truy cap.
+- `targets`: media URL, profile URL hoac username
+- `-o`, `--output-dir`: thu muc dich, mac dinh la `downloads`
+- `-t`, `--template`: ten file cho media URL truc tiep theo template cua `yt-dlp`
+- `--profile-template`: mau ten cho asset do Instaloader quan ly, chu yeu huu ich voi asset profile nhu profile pic
+- `--cookies-file`: cookies file Netscape format cho media URL hoac profile
+- `--login`: username Instagram de login/session mode
+- `--session-file`: session file rieng cho Instaloader
+- `--write-caption`: luu caption ra file `.txt`
+- `--write-thumbnail`: luu thumbnail khi co
+- `--print-info`: chi in metadata, khong tai file
+- `--max-posts`: gioi han so item moi luot quet profile
+- `--no-reels`: bo qua tab reels khi tai profile
+- `--reels-only`: chi quet tab reels cua profile
+- `--no-profile-pic`: bo qua avatar profile
+- `--fast-update`: dung som khi gap item da ton tai
+- `-v`, `--verbose`: bat log chi tiet
+
+## Cau truc output
+
+Mac dinh file duoc luu trong `downloads/`.
+
+Vi du:
+
+```text
+downloads/
+  11_14_42/
+    20250828_070153_DN47sPejxAf_01.jpg
+    20251212_204951_DSMGvGgj5mu_01.mp4
+    20251212_204951_DSMGvGgj5mu.txt
+    20251212_204951_DSMGvGgj5mu_01_thumbnail.jpg
+```
+
+Quy uoc dat ten hien tai:
+
+- `YYYYMMDD_HHMMSS_shortcode_index.ext`
+- captions duoc luu thanh `.txt`
+- thumbnail duoc them hau to `_thumbnail`
+
+## Ghi chu quan trong
+
+- Neu ban chay profile mode ma chi thay anh, hay dung `--reels-only` de quet tab reels rieng
+- Mot so profile public van co the can cookies/session vi Instagram thay doi rate-limit theo thoi diem
+- Van co the xuat hien mot vai dong canh bao `graphql/query 403` tu Instaloader khi doc metadata hoac quet reels, nhung profile download van co the tiep tuc chay
+- `--profile-template` khong chi phoi toan bo feed download path hien tai; media profile duoc dat ten theo timestamp + shortcode de on dinh hon
+
+## Troubleshooting
+
+### 1. `Khong the truy cap profile ... khi chua dang nhap`
+
+Profile dang can auth hoac Instagram dang chan anonymous access.
+
+Thu:
+
+```powershell
+python -m instadow 11_14_42 --cookies-file .\instagram_cookies.txt
+```
+
+### 2. `Please wait a few minutes before you try again`
+
+Instagram dang rate-limit session hien tai.
+
+Huong xu ly:
+
+- doi 10-30 phut roi thu lai
+- giam tan suat chay lien tuc
+- export lai cookies moi
+- dung profile voi `--max-posts` nho hon
+
+### 3. Da login roi nhung van loi
+
+Thu uu tien `--cookies-file` truoc `--login`, vi cookies browser thuong on dinh hon.
+
+### 4. `There are multiple cookies with name, 'csrftoken'`
+
+Ban nay da duoc fix trong CLI. Neu con gap, hay cap nhat repo len commit moi nhat roi chay lai:
+
+```powershell
+python -m pip install -e .
+```
+
+### 5. `UnicodeEncodeError` tren PowerShell
+
+Ban nay da co fallback JSON escaped trong `--print-info`, nen metadata van in ra duoc.
+
+## Bao mat
+
+- Khong commit `instagram_cookies.txt`, `.session`, hoac credential files len git
+- Repo da co `.gitignore` cho cac pattern cookie/session pho bien, nhung ban van nen tu kiem tra truoc khi push
+
+## Lenh goi y
+
+Tai profile ca feed va reels:
+
+```powershell
+python -m instadow 11_14_42 --cookies-file .\instagram_cookies.txt
+```
+
+Chi tai reels:
+
+```powershell
+python -m instadow 11_14_42 --reels-only --cookies-file .\instagram_cookies.txt
+```
+
+Kiem tra metadata truoc:
+
+```powershell
+python -m instadow 11_14_42 --print-info --cookies-file .\instagram_cookies.txt -v
+```

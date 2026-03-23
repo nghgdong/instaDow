@@ -103,11 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--profile-template",
-        help="Mau ten file cho profile downloads theo filename pattern cua instaloader.",
+        help="Mau ten file cho asset profile do Instaloader quan ly, vi du profile pic.",
     )
     parser.add_argument(
         "--cookies-file",
-        help="Duong dan toi file cookies.txt cho media URLs neu can dang nhap.",
+        help="Duong dan toi file cookies.txt cho media URLs hoac profile downloads neu can dang nhap.",
     )
     parser.add_argument(
         "--login",
@@ -136,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-posts",
         type=positive_int,
-        help="Gioi han so post/reels tai moi profile.",
+        help="Gioi han so item moi luot quet profile.",
     )
     parser.add_argument(
         "--no-reels",
