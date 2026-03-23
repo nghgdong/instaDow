@@ -1,4 +1,4 @@
 # Project Rules
 
 ## Git
-- Khi thực hiện xong 1 chức năng thì push code lên git
+- Khi thuc hien xong 1 chuc nang thi commit code voi message ro rang va push len GitHub.
