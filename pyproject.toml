@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "instadow"
+version = "0.1.0"
+description = "CLI tool to download public Instagram photos, videos, and reels"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["yt-dlp"]
+authors = [
+  { name = "Dong Nguyen", email = "dongnh18@outlook.com" }
+]
+
+[project.scripts]
+instadow = "instadow.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
