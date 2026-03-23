@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -12,6 +13,7 @@ from instadow.downloader import (
     DownloadTracker,
     ProfileAuth,
     _iter_feed_item_media,
+    _iter_instaloader_post_media,
     _login_instaloader,
     _resolve_profile_auth,
     build_ydl_options,
@@ -58,6 +60,11 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(args.output_dir, "downloads")
         self.assertFalse(args.write_caption)
         self.assertFalse(args.no_reels)
+
+    def test_reels_only_enables_profile_reels_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["11_14_42", "--reels-only"])
+        self.assertTrue(args.reels_only)
 
 
 class DownloaderOptionTests(unittest.TestCase):
@@ -133,6 +140,23 @@ class DownloaderOptionTests(unittest.TestCase):
         candidates = _iter_feed_item_media(item, include_reels=False)
 
         self.assertEqual(candidates, [])
+
+    def test_iter_instaloader_post_media_builds_video_candidate(self) -> None:
+        class DummyPost:
+            typename = "GraphVideo"
+            date_utc = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            caption = "reel caption"
+            is_video = True
+            video_url = "https://video.example/reel.mp4"
+            url = "https://img.example/reel.jpg"
+            shortcode = "REEL123"
+
+        candidates = _iter_instaloader_post_media(DummyPost(), prefer_reel_url=True)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].media_kind, "video")
+        self.assertEqual(candidates[0].media_url, "https://video.example/reel.mp4")
+        self.assertEqual(candidates[0].thumbnail_url, "https://img.example/reel.jpg")
 
 
 class ProfileDownloadTests(unittest.TestCase):

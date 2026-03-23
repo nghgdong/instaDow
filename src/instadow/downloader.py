@@ -40,6 +40,7 @@ class DownloadOptions:
     print_info: bool = False
     verbose: bool = False
     include_profile_reels: bool = True
+    profile_reels_only: bool = False
     include_profile_pic: bool = True
     profile_limit: int | None = None
     fast_update: bool = False
@@ -513,6 +514,46 @@ def _write_caption_file(directory: Path, file_stem: str, caption_text: str | Non
     return caption_path
 
 
+def _iter_instaloader_post_media(post, prefer_reel_url: bool) -> list[ProfileMediaCandidate]:
+    timestamp = post.date_utc.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    caption_text = str(post.caption or "").strip() or None
+
+    if post.typename == "GraphSidecar":
+        candidates: list[ProfileMediaCandidate] = []
+        for media_index, node in enumerate(post.get_sidecar_nodes(), start=1):
+            media_kind: Literal["image", "video"] = "video" if node.is_video else "image"
+            media_url = getattr(node, "video_url", None) if node.is_video else node.display_url
+            thumbnail_url = node.display_url if node.is_video else None
+            if not media_url:
+                continue
+            candidates.append(
+                ProfileMediaCandidate(
+                    file_stem=f"{timestamp}_{post.shortcode}_{media_index:02d}",
+                    media_kind=media_kind,
+                    media_url=str(media_url),
+                    thumbnail_url=str(thumbnail_url) if thumbnail_url else None,
+                    caption_text=caption_text,
+                )
+            )
+        return candidates
+
+    media_kind = "video" if post.is_video else "image"
+    media_url = getattr(post, "video_url", None) if post.is_video else post.url
+    if not media_url:
+        return []
+
+    thumbnail_url = str(post.url) if post.is_video and getattr(post, "url", None) else None
+    return [
+        ProfileMediaCandidate(
+            file_stem=f"{timestamp}_{post.shortcode}_01",
+            media_kind=media_kind,
+            media_url=str(media_url),
+            thumbnail_url=thumbnail_url,
+            caption_text=caption_text,
+        )
+    ]
+
+
 def _merge_results(target: DownloadResult, source: DownloadResult) -> None:
     existing_files = set(target.downloaded_files)
     for file_path in source.downloaded_files:
@@ -806,47 +847,102 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
                     loader.download_profilepic(profile)
 
                 profile_url = f"https://www.instagram.com/{profile.username}/"
-                for item in _iter_profile_feed_items(
-                    session=feed_session,
-                    profile_name=profile.username,
-                    profile_url=profile_url,
-                    limit_posts=options.profile_limit,
-                ):
-                    candidates = _iter_feed_item_media(item, options.include_profile_reels)
-                    if not candidates:
-                        continue
+                seen_shortcodes: set[str] = set()
 
-                    downloaded_any_for_post = False
-                    for candidate in candidates:
-                        _, downloaded_new_media = _download_http_asset(
-                            session=feed_session,
-                            asset_url=candidate.media_url,
-                            directory=target_directory,
-                            file_stem=candidate.file_stem,
-                            media_kind=candidate.media_kind,
-                        )
-                        downloaded_any_for_post = downloaded_any_for_post or downloaded_new_media
+                if not options.profile_reels_only:
+                    for item in _iter_profile_feed_items(
+                        session=feed_session,
+                        profile_name=profile.username,
+                        profile_url=profile_url,
+                        limit_posts=options.profile_limit,
+                    ):
+                        shortcode = str(item.get("code") or "")
+                        if shortcode:
+                            seen_shortcodes.add(shortcode)
 
-                        if options.write_thumbnail and candidate.thumbnail_url:
-                            _, downloaded_thumbnail = _download_http_asset(
+                        candidates = _iter_feed_item_media(item, options.include_profile_reels)
+                        if not candidates:
+                            continue
+
+                        downloaded_any_for_post = False
+                        for candidate in candidates:
+                            _, downloaded_new_media = _download_http_asset(
                                 session=feed_session,
-                                asset_url=candidate.thumbnail_url,
+                                asset_url=candidate.media_url,
                                 directory=target_directory,
-                                file_stem=f"{candidate.file_stem}_thumbnail",
-                                media_kind="image",
+                                file_stem=candidate.file_stem,
+                                media_kind=candidate.media_kind,
                             )
-                            downloaded_any_for_post = downloaded_any_for_post or downloaded_thumbnail
+                            downloaded_any_for_post = downloaded_any_for_post or downloaded_new_media
 
-                    if options.write_caption:
-                        caption_path = _write_caption_file(
-                            directory=target_directory,
-                            file_stem=candidates[0].file_stem.rsplit("_", 1)[0],
-                            caption_text=candidates[0].caption_text,
-                        )
-                        downloaded_any_for_post = downloaded_any_for_post or caption_path is not None
+                            if options.write_thumbnail and candidate.thumbnail_url:
+                                _, downloaded_thumbnail = _download_http_asset(
+                                    session=feed_session,
+                                    asset_url=candidate.thumbnail_url,
+                                    directory=target_directory,
+                                    file_stem=f"{candidate.file_stem}_thumbnail",
+                                    media_kind="image",
+                                )
+                                downloaded_any_for_post = downloaded_any_for_post or downloaded_thumbnail
 
-                    if options.fast_update and not downloaded_any_for_post:
-                        break
+                        if options.write_caption:
+                            caption_path = _write_caption_file(
+                                directory=target_directory,
+                                file_stem=candidates[0].file_stem.rsplit("_", 1)[0],
+                                caption_text=candidates[0].caption_text,
+                            )
+                            downloaded_any_for_post = downloaded_any_for_post or caption_path is not None
+
+                        if options.fast_update and not downloaded_any_for_post:
+                            break
+
+                if options.include_profile_reels:
+                    processed_reels = 0
+                    for reel_post in profile.get_reels():
+                        if options.profile_limit is not None and processed_reels >= options.profile_limit:
+                            break
+
+                        if reel_post.shortcode in seen_shortcodes:
+                            continue
+
+                        candidates = _iter_instaloader_post_media(reel_post, prefer_reel_url=True)
+                        if not candidates:
+                            continue
+
+                        seen_shortcodes.add(reel_post.shortcode)
+                        processed_reels += 1
+                        downloaded_any_for_post = False
+
+                        for candidate in candidates:
+                            _, downloaded_new_media = _download_http_asset(
+                                session=feed_session,
+                                asset_url=candidate.media_url,
+                                directory=target_directory,
+                                file_stem=candidate.file_stem,
+                                media_kind=candidate.media_kind,
+                            )
+                            downloaded_any_for_post = downloaded_any_for_post or downloaded_new_media
+
+                            if options.write_thumbnail and candidate.thumbnail_url:
+                                _, downloaded_thumbnail = _download_http_asset(
+                                    session=feed_session,
+                                    asset_url=candidate.thumbnail_url,
+                                    directory=target_directory,
+                                    file_stem=f"{candidate.file_stem}_thumbnail",
+                                    media_kind="image",
+                                )
+                                downloaded_any_for_post = downloaded_any_for_post or downloaded_thumbnail
+
+                        if options.write_caption:
+                            caption_path = _write_caption_file(
+                                directory=target_directory,
+                                file_stem=candidates[0].file_stem.rsplit("_", 1)[0],
+                                caption_text=candidates[0].caption_text,
+                            )
+                            downloaded_any_for_post = downloaded_any_for_post or caption_path is not None
+
+                        if options.fast_update and not downloaded_any_for_post:
+                            break
             except PrivateProfileNotFollowedException as exc:
                 raise RuntimeError(
                     f"Profile `{profile.username}` la private hoac can dang nhap. Thu lai voi `--login <instagram_username>`."

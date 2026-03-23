@@ -144,6 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Khong tai reels khi target la profile.",
     )
     parser.add_argument(
+        "--reels-only",
+        action="store_true",
+        help="Chi tai reels khi target la profile.",
+    )
+    parser.add_argument(
         "--no-profile-pic",
         action="store_true",
         help="Khong tai avatar khi target la profile.",
@@ -177,7 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         write_thumbnail=args.write_thumbnail,
         print_info=args.print_info,
         verbose=args.verbose,
-        include_profile_reels=not args.no_reels,
+        include_profile_reels=args.reels_only or not args.no_reels,
+        profile_reels_only=args.reels_only,
         include_profile_pic=not args.no_profile_pic,
         profile_limit=args.max_posts,
         fast_update=args.fast_update,
