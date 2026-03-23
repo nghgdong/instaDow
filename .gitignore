@@ -5,6 +5,9 @@ __pycache__/
 build/
 dist/
 downloads/
+smoke_downloads/
+profile_smoke*/
+reels_smoke/
 instagram_cookies.txt
 *.cookies.txt
 *.session

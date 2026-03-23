@@ -57,7 +57,7 @@ class ParserTests(unittest.TestCase):
     def test_default_output_directory_is_downloads(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["https://www.instagram.com/p/abc123/"])
-        self.assertEqual(args.output_dir, "downloads")
+        self.assertIsNone(args.output_dir)
         self.assertFalse(args.write_caption)
         self.assertFalse(args.no_reels)
 

@@ -45,6 +45,20 @@ hoac:
 python -m instadow --help
 ```
 
+Xem version:
+
+```powershell
+instadow --version
+```
+
+## Product-ready features
+
+- Nho config mac dinh qua file JSON local
+- Ho tro batch targets qua `--targets-file`
+- Co `--self-check` de tu kiem tra moi truong, config, cookies
+- Co script build `.exe` cho Windows
+- Co the support user tu xa de hon vi config va diagnostics da duoc chuan hoa
+
 ## Kien truc tai media
 
 - Media URL truc tiep duoc tai bang `yt-dlp`
@@ -100,6 +114,65 @@ Sau khi login thanh cong mot lan, tool se co gang:
 
 - nap lai session da luu trong local config
 - neu may chi co 1 Instaloader session, tool se tu phat hien va thu dung session do
+
+## Config mac dinh
+
+Tool co the luu cac tuy chon thuong dung thanh mac dinh.
+
+File config mac dinh:
+
+```text
+%LOCALAPPDATA%\instadow\config.json
+```
+
+Luu config hien tai:
+
+```powershell
+python -m instadow --cookies-file .\instagram_cookies.txt --output-dir .\downloads --save-config
+```
+
+Xem config dang luu:
+
+```powershell
+python -m instadow --show-config
+```
+
+Xoa config:
+
+```powershell
+python -m instadow --reset-config
+```
+
+Dung config file rieng:
+
+```powershell
+python -m instadow --config .\seller-config.json --show-config
+```
+
+Sau khi da luu config, ban co the goi gon:
+
+```powershell
+python -m instadow 11_14_42
+```
+
+## Batch mode
+
+Ban co the dat danh sach target trong file text, moi dong mot target:
+
+```text
+# targets.txt
+11_14_42
+https://www.instagram.com/p/POST_ID/
+https://www.instagram.com/reel/REEL_ID/
+```
+
+Chay batch:
+
+```powershell
+python -m instadow --targets-file .\targets.txt
+```
+
+Co the ket hop `targets` truyen truc tiep va `--targets-file`. Tool se tu dedupe target trung nhau.
 
 ## Cach dung co ban
 
@@ -199,9 +272,22 @@ Tai media URL can auth:
 python -m instadow --cookies-file .\instagram_cookies.txt https://www.instagram.com/p/POST_ID/
 ```
 
+Chan doan moi truong:
+
+```powershell
+python -m instadow --self-check
+python -m instadow --self-check --cookies-file .\instagram_cookies.txt --targets-file .\targets.txt
+```
+
 ## Y nghia cac option chinh
 
 - `targets`: media URL, profile URL hoac username
+- `--targets-file`: doc danh sach targets tu file text
+- `--config`: chi dinh file config JSON rieng
+- `--save-config`: luu cac option hien tai thanh mac dinh
+- `--show-config`: in config dang luu va config hieu luc
+- `--reset-config`: xoa config dang luu
+- `--self-check`: in thong tin diagnostics de debug/support
 - `-o`, `--output-dir`: thu muc dich, mac dinh la `downloads`
 - `-t`, `--template`: ten file cho media URL truc tiep theo template cua `yt-dlp`
 - `--profile-template`: mau ten cho asset do Instaloader quan ly, chu yeu huu ich voi asset profile nhu profile pic
@@ -289,6 +375,36 @@ Ban nay da co fallback JSON escaped trong `--print-info`, nen metadata van in ra
 
 - Khong commit `instagram_cookies.txt`, `.session`, hoac credential files len git
 - Repo da co `.gitignore` cho cac pattern cookie/session pho bien, nhung ban van nen tu kiem tra truoc khi push
+
+## Build EXE cho Windows
+
+Tool da co script build san:
+
+```powershell
+.\scripts\build_exe.ps1
+```
+
+Script se:
+
+- cai them dependency build neu can
+- dung PyInstaller dong goi CLI
+- tao file trong `dist\instaDow.exe`
+
+Neu muon build voi ten khac:
+
+```powershell
+.\scripts\build_exe.ps1 -Name instaDowPro
+```
+
+## Goi y de ban tool gia 10$
+
+- Ban source code + file `.exe` san dung cho Windows
+- Kem file `README.md`, `targets.txt` mau, va huong dan export cookies
+- Luu san config mac dinh de nguoi mua chi can thay `instagram_cookies.txt`
+- Dung `--self-check` khi support khach tu xa, khong can hoi qua nhieu screenshot
+- Goi san 2 mode ro rang trong mo ta san pham:
+  `Profile mode`: tai feed + reels
+  `Reels only mode`: chi tai reel tab
 
 ## Lenh goi y
 
