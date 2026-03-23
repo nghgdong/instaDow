@@ -6,7 +6,16 @@ import unittest
 from unittest.mock import patch
 
 from instadow.cli import build_parser, instagram_target
-from instadow.downloader import DownloadOptions, DownloadTarget, DownloadTracker, build_ydl_options, download
+from instadow.downloader import (
+    DownloadOptions,
+    DownloadTarget,
+    DownloadTracker,
+    ProfileAuth,
+    _login_instaloader,
+    _resolve_profile_auth,
+    build_ydl_options,
+    download,
+)
 
 
 class InstagramTargetTests(unittest.TestCase):
@@ -98,6 +107,8 @@ class ProfileDownloadTests(unittest.TestCase):
                 return_value=(
                     object(),
                     DummyProfile,
+                    lambda _username: "session",
+                    lambda _username: "legacy-session",
                     Exception,
                     Exception,
                     Exception,
@@ -108,6 +119,50 @@ class ProfileDownloadTests(unittest.TestCase):
                 with patch("instadow.downloader._build_instaloader", return_value=DummyLoader()):
                     with self.assertRaisesRegex(RuntimeError, "Thu lai voi `--login <instagram_username>`"):
                         download(targets, options)
+
+    def test_reuses_saved_login_when_no_login_flag_is_given(self) -> None:
+        saved_auth = ProfileAuth(login_user="saved_user", session_file=Path("saved.session"), source="stored")
+
+        with patch("instadow.downloader._load_saved_auth_state", return_value=saved_auth):
+            with patch("instadow.downloader._discover_single_session_auth", return_value=None):
+                resolved = _resolve_profile_auth(DownloadOptions(output_dir=Path("downloads")))
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.login_user, "saved_user")
+        self.assertEqual(resolved.session_file, Path("saved.session"))
+        self.assertEqual(resolved.source, "stored")
+
+    def test_discovers_single_session_when_no_saved_auth_exists(self) -> None:
+        discovered_auth = ProfileAuth(
+            login_user="auto_user",
+            session_file=Path("auto.session"),
+            source="discovered",
+        )
+
+        with patch("instadow.downloader._load_saved_auth_state", return_value=None):
+            with patch("instadow.downloader._discover_single_session_auth", return_value=discovered_auth):
+                resolved = _resolve_profile_auth(DownloadOptions(output_dir=Path("downloads")))
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.login_user, "auto_user")
+        self.assertEqual(resolved.session_file, Path("auto.session"))
+        self.assertEqual(resolved.source, "discovered")
+
+    def test_login_error_is_clear_when_instagram_rate_limits_session(self) -> None:
+        class DummyLoader:
+            def load_session_from_file(self, _username, _filename) -> None:
+                return None
+
+            def test_login(self):
+                return None
+
+        with patch(
+            "instadow.downloader._resolve_profile_auth",
+            return_value=ProfileAuth(login_user="saved_user", session_file=Path("saved.session"), source="stored"),
+        ):
+            with patch("instadow.downloader._resolve_session_file", return_value=Path("saved.session")):
+                with self.assertRaisesRegex(RuntimeError, "tam thoi tu choi yeu cau"):
+                    _login_instaloader(DummyLoader(), DownloadOptions(output_dir=Path("downloads")))
 
 
 if __name__ == "__main__":

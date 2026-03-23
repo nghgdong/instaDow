@@ -93,6 +93,12 @@ Dang nhap de tai profile private hoac tang do on dinh khi tai profile:
 instadow username --login your_instagram_username
 ```
 
+Sau khi login thanh cong mot lan, tool se nho session va tu dong thu nap lai o cac lan chay profile tiep theo. Luc do ban co the goi gon:
+
+```powershell
+instadow username
+```
+
 Neu muon dung session file rieng:
 
 ```powershell
@@ -105,4 +111,6 @@ instadow username --login your_instagram_username --session-file .\ig.session
 - Profile downloads duoc tai bang `instaloader`.
 - Profile downloads co the yeu cau dang nhap, ngay ca voi mot so profile public, do thay doi rate-limit va co che truy cap cua Instagram.
 - Lan dau dung `--login`, tool se thu nap session truoc. Neu chua co session, no se hoi mat khau tuong tac va luu session de dung lai sau do.
+- Session login da luu se duoc nho lai trong cau hinh local cua user de nhung lan sau khong can truyen lai `--login`.
+- Neu may chi co dung 1 session Instaloader da luu, tool cung se tu phat hien va thu dung session do.
 - Tool nay phu hop nhat voi noi dung cong khai hoac noi dung ban co quyen truy cap.

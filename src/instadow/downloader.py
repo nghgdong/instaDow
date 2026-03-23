@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +31,13 @@ class DownloadOptions:
     include_profile_pic: bool = True
     profile_limit: int | None = None
     fast_update: bool = False
+
+
+@dataclass(slots=True)
+class ProfileAuth:
+    login_user: str
+    session_file: Path | None = None
+    source: Literal["explicit", "stored", "discovered"] = "explicit"
 
 
 @dataclass(slots=True)
@@ -92,6 +100,7 @@ def _load_instaloader():
     try:
         import instaloader
         from instaloader import Profile
+        from instaloader.instaloader import get_default_session_filename, get_legacy_session_filename
         from instaloader.exceptions import (
             ConnectionException,
             InstaloaderException,
@@ -107,6 +116,8 @@ def _load_instaloader():
     return (
         instaloader,
         Profile,
+        get_default_session_filename,
+        get_legacy_session_filename,
         ConnectionException,
         InstaloaderException,
         LoginException,
@@ -176,31 +187,161 @@ def _merge_results(target: DownloadResult, source: DownloadResult) -> None:
     target.inspected_items += source.inspected_items
 
 
-def _login_instaloader(loader, options: DownloadOptions) -> None:
-    if not options.login_user:
-        return
+def _auth_state_path() -> Path:
+    base_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".config"))
+    return base_dir / "instadow" / "auth.json"
 
-    session_filename = str(options.session_file) if options.session_file else None
-    if options.session_file:
-        options.session_file.parent.mkdir(parents=True, exist_ok=True)
+
+def _save_auth_state(auth: ProfileAuth) -> None:
+    state_path = _auth_state_path()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "login_user": auth.login_user,
+        "session_file": str(auth.session_file) if auth.session_file else None,
+    }
+    state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_saved_auth_state() -> ProfileAuth | None:
+    state_path = _auth_state_path()
+    if not state_path.is_file():
+        return None
 
     try:
-        loader.load_session_from_file(options.login_user, session_filename)
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    login_user = payload.get("login_user")
+    if not login_user or not isinstance(login_user, str):
+        return None
+
+    session_value = payload.get("session_file")
+    session_file = Path(session_value).resolve() if isinstance(session_value, str) and session_value else None
+    return ProfileAuth(login_user=login_user, session_file=session_file, source="stored")
+
+
+def _discover_single_session_auth() -> ProfileAuth | None:
+    session_dir = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".config")) / "Instaloader"
+    if not session_dir.is_dir():
+        return None
+
+    session_files = [path.resolve() for path in session_dir.glob("session-*") if path.is_file()]
+    if len(session_files) != 1:
+        return None
+
+    session_file = session_files[0]
+    login_user = session_file.name.removeprefix("session-").strip()
+    if not login_user:
+        return None
+
+    return ProfileAuth(login_user=login_user, session_file=session_file, source="discovered")
+
+
+def _resolve_profile_auth(options: DownloadOptions) -> ProfileAuth | None:
+    if options.login_user:
+        return ProfileAuth(
+            login_user=options.login_user,
+            session_file=options.session_file,
+            source="explicit",
+        )
+
+    saved_auth = _load_saved_auth_state()
+    if saved_auth:
+        if options.session_file:
+            saved_auth.session_file = options.session_file
+        return saved_auth
+
+    discovered_auth = _discover_single_session_auth()
+    if discovered_auth:
+        if options.session_file:
+            discovered_auth.session_file = options.session_file
+        return discovered_auth
+
+    if options.session_file:
+        raise RuntimeError("`--session-file` can di kem `--login <instagram_username>` o lan dau de biet session nay thuoc tai khoan nao.")
+
+    return None
+
+
+def _resolve_session_file(auth: ProfileAuth):
+    (
+        _instaloader,
+        _profile_class,
+        get_default_session_filename,
+        get_legacy_session_filename,
+        _connection_exception,
+        _instaloader_exception,
+        _login_exception,
+        _private_profile_exception,
+        _profile_not_exists_exception,
+    ) = _load_instaloader()
+
+    if auth.session_file:
+        return auth.session_file.resolve()
+
+    default_path = Path(get_default_session_filename(auth.login_user)).resolve()
+    if default_path.exists():
+        return default_path
+
+    legacy_path = Path(get_legacy_session_filename(auth.login_user)).resolve()
+    if legacy_path.exists():
+        return legacy_path
+
+    return default_path
+
+
+def _login_instaloader(loader, options: DownloadOptions) -> str | None:
+    auth = _resolve_profile_auth(options)
+    if not auth:
+        return None
+
+    session_path = _resolve_session_file(auth)
+    session_filename = str(session_path)
+    if auth.source == "explicit":
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        loader.load_session_from_file(auth.login_user, session_filename)
         active_user = loader.test_login()
-        if active_user != options.login_user:
+        if active_user is None:
             raise RuntimeError(
-                f"Session dang duoc gan voi tai khoan `{active_user}` thay vi `{options.login_user}`."
+                f"Da nap session cho `{auth.login_user}` nhung Instagram tam thoi tu choi yeu cau hoac dang gioi han toc do. "
+                "Thu lai sau vai phut, han che spam request, hoac login lai de lam moi session."
+            )
+        if active_user != auth.login_user:
+            raise RuntimeError(
+                f"Session dang duoc gan voi tai khoan `{active_user}` thay vi `{auth.login_user}`."
             )
         if options.verbose:
             print(f"Da nap session cho {active_user}")
-        return
+        _save_auth_state(ProfileAuth(login_user=auth.login_user, session_file=session_path, source="stored"))
+        return active_user
     except FileNotFoundError:
+        if auth.source == "stored":
+            if options.verbose:
+                print(f"Khong tim thay saved session cho `{auth.login_user}`, se thu anonymous mode.")
+            return None
         if options.verbose:
             print("Chua co session file, se dang nhap tuong tac de tao moi.")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        if auth.source == "stored":
+            if options.verbose:
+                print(f"Khong the nap saved session cho `{auth.login_user}`: {exc}. Se thu anonymous mode.")
+            return None
+        if options.verbose:
+            print(f"Khong the nap session hien co cho `{auth.login_user}`: {exc}. Se login lai.")
+
+    if auth.source != "explicit":
+        return None
 
     try:
-        loader.interactive_login(options.login_user)
+        loader.interactive_login(auth.login_user)
         loader.save_session_to_file(session_filename)
+        _save_auth_state(ProfileAuth(login_user=auth.login_user, session_file=session_path, source="stored"))
+        return auth.login_user
     except Exception as exc:
         raise RuntimeError(f"Dang nhap Instagram that bai: {exc}") from exc
 
@@ -252,6 +393,8 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
     (
         _instaloader,
         Profile,
+        _get_default_session_filename,
+        _get_legacy_session_filename,
         ConnectionException,
         InstaloaderException,
         LoginException,
@@ -263,7 +406,7 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
     result = DownloadResult()
 
     try:
-        _login_instaloader(loader, options)
+        active_login_user = _login_instaloader(loader, options)
 
         for target in targets:
             profile_name = target.value
@@ -271,8 +414,10 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
             try:
                 profile = Profile.from_username(loader.context, profile_name)
             except ProfileNotExistsException as exc:
-                if options.login_user:
-                    raise RuntimeError(f"Profile `{profile_name}` khong ton tai hoac khong the truy cap.") from exc
+                if active_login_user:
+                    raise RuntimeError(
+                        f"Profile `{profile_name}` khong ton tai hoac khong the truy cap ngay ca khi dang nhap bang `{active_login_user}`."
+                    ) from exc
                 raise RuntimeError(
                     f"Khong the truy cap profile `{profile_name}` khi chua dang nhap. "
                     "Profile co the khong ton tai hoac Instagram dang chan anonymous access. "
