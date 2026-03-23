@@ -11,6 +11,7 @@ from instadow.downloader import (
     DownloadTarget,
     DownloadTracker,
     ProfileAuth,
+    _iter_feed_item_media,
     _login_instaloader,
     _resolve_profile_auth,
     build_ydl_options,
@@ -80,6 +81,58 @@ class DownloaderOptionTests(unittest.TestCase):
         self.assertTrue(ydl_options["writethumbnail"])
         self.assertTrue(ydl_options["skip_download"])
         self.assertFalse(ydl_options["quiet"])
+
+    def test_iter_feed_item_media_builds_candidates_for_carousel(self) -> None:
+        item = {
+            "code": "ABC123",
+            "taken_at": 1704067200,
+            "media_type": 8,
+            "product_type": "feed",
+            "caption": {"text": "hello"},
+            "carousel_media": [
+                {
+                    "media_type": 1,
+                    "image_versions2": {
+                        "candidates": [
+                            {"url": "https://img.example/1.jpg", "width": 100, "height": 100},
+                            {"url": "https://img.example/1_big.jpg", "width": 200, "height": 200},
+                        ]
+                    },
+                },
+                {
+                    "media_type": 2,
+                    "image_versions2": {
+                        "candidates": [{"url": "https://img.example/thumb.jpg", "width": 100, "height": 100}]
+                    },
+                    "video_versions": [
+                        {"url": "https://video.example/1.mp4", "width": 640, "height": 480, "type": 1}
+                    ],
+                },
+            ],
+        }
+
+        candidates = _iter_feed_item_media(item, include_reels=True)
+
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(candidates[0].media_kind, "image")
+        self.assertEqual(candidates[0].media_url, "https://img.example/1_big.jpg")
+        self.assertEqual(candidates[1].media_kind, "video")
+        self.assertEqual(candidates[1].thumbnail_url, "https://img.example/thumb.jpg")
+        self.assertEqual(candidates[0].caption_text, "hello")
+
+    def test_iter_feed_item_media_skips_reels_when_disabled(self) -> None:
+        item = {
+            "code": "REEL123",
+            "taken_at": 1704067200,
+            "media_type": 2,
+            "product_type": "clips",
+            "video_versions": [{"url": "https://video.example/reel.mp4", "width": 640, "height": 480, "type": 1}],
+            "image_versions2": {"candidates": [{"url": "https://img.example/reel.jpg", "width": 100, "height": 100}]},
+        }
+
+        candidates = _iter_feed_item_media(item, include_reels=False)
+
+        self.assertEqual(candidates, [])
 
 
 class ProfileDownloadTests(unittest.TestCase):

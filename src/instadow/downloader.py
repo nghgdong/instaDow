@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from http.cookiejar import MozillaCookieJar
 import json
+import mimetypes
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
+
+import requests
+
+
+INSTAGRAM_WEB_APP_ID = "936619743392459"
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
+SUPPORTED_VIDEO_SUFFIXES = {".mp4", ".m4v", ".mov", ".webm"}
+SUPPORTED_MEDIA_SUFFIXES = SUPPORTED_IMAGE_SUFFIXES | SUPPORTED_VIDEO_SUFFIXES
 
 
 @dataclass(slots=True)
@@ -39,6 +50,15 @@ class ProfileAuth:
     login_user: str
     session_file: Path | None = None
     source: Literal["explicit", "stored", "discovered"] = "explicit"
+
+
+@dataclass(slots=True)
+class ProfileMediaCandidate:
+    file_stem: str
+    media_kind: Literal["image", "video"]
+    media_url: str
+    thumbnail_url: str | None = None
+    caption_text: str | None = None
 
 
 @dataclass(slots=True)
@@ -173,6 +193,180 @@ def _print_json(payload: dict) -> None:
         print(json.dumps(payload, ensure_ascii=True, indent=2))
 
 
+def _extract_best_image_url(image_versions: dict | None) -> str | None:
+    if not isinstance(image_versions, dict):
+        return None
+
+    candidates = image_versions.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+
+    usable_candidates = [
+        candidate
+        for candidate in candidates
+        if isinstance(candidate, dict) and candidate.get("url")
+    ]
+    if not usable_candidates:
+        return None
+
+    best_candidate = max(
+        usable_candidates,
+        key=lambda candidate: (
+            int(candidate.get("width") or 0) * int(candidate.get("height") or 0),
+            int(candidate.get("width") or 0),
+            int(candidate.get("height") or 0),
+        ),
+    )
+    return str(best_candidate["url"])
+
+
+def _extract_best_video_url(video_versions: list | None) -> str | None:
+    if not isinstance(video_versions, list):
+        return None
+
+    usable_candidates = [
+        candidate
+        for candidate in video_versions
+        if isinstance(candidate, dict) and candidate.get("url")
+    ]
+    if not usable_candidates:
+        return None
+
+    best_candidate = max(
+        usable_candidates,
+        key=lambda candidate: (
+            int(candidate.get("width") or 0) * int(candidate.get("height") or 0),
+            int(candidate.get("type") or 0),
+            int(candidate.get("width") or 0),
+            int(candidate.get("height") or 0),
+        ),
+    )
+    return str(best_candidate["url"])
+
+
+def _extract_caption_text(item: dict) -> str | None:
+    caption = item.get("caption")
+    if isinstance(caption, dict):
+        text = caption.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    return None
+
+
+def _build_profile_post_url(shortcode: str, product_type: str | None) -> str:
+    if str(product_type or "").lower() == "clips":
+        return f"https://www.instagram.com/reel/{shortcode}/"
+    return f"https://www.instagram.com/p/{shortcode}/"
+
+
+def _build_feed_media_candidate(
+    node: dict,
+    file_stem: str,
+    caption_text: str | None,
+) -> ProfileMediaCandidate | None:
+    media_type = node.get("media_type")
+    if media_type == 1:
+        media_url = _extract_best_image_url(node.get("image_versions2"))
+        if not media_url:
+            return None
+        return ProfileMediaCandidate(
+            file_stem=file_stem,
+            media_kind="image",
+            media_url=media_url,
+            caption_text=caption_text,
+        )
+
+    if media_type == 2:
+        media_url = _extract_best_video_url(node.get("video_versions"))
+        if not media_url:
+            return None
+        return ProfileMediaCandidate(
+            file_stem=file_stem,
+            media_kind="video",
+            media_url=media_url,
+            thumbnail_url=_extract_best_image_url(node.get("image_versions2")),
+            caption_text=caption_text,
+        )
+
+    return None
+
+
+def _iter_feed_item_media(item: dict, include_reels: bool) -> list[ProfileMediaCandidate]:
+    shortcode = item.get("code")
+    if not shortcode:
+        return []
+
+    product_type = str(item.get("product_type") or "").lower()
+    if product_type == "clips" and not include_reels:
+        return []
+
+    taken_at = item.get("taken_at")
+    if isinstance(taken_at, (int, float)):
+        taken_at_dt = datetime.fromtimestamp(float(taken_at), tz=timezone.utc)
+    else:
+        taken_at_dt = datetime.now(timezone.utc)
+
+    timestamp = taken_at_dt.strftime("%Y%m%d_%H%M%S")
+    caption_text = _extract_caption_text(item)
+    media_type = item.get("media_type")
+
+    if media_type == 8:
+        candidates: list[ProfileMediaCandidate] = []
+        for media_index, node in enumerate(item.get("carousel_media") or [], start=1):
+            candidate = _build_feed_media_candidate(
+                node=node,
+                file_stem=f"{timestamp}_{shortcode}_{media_index:02d}",
+                caption_text=caption_text,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
+
+    candidate = _build_feed_media_candidate(
+        node=item,
+        file_stem=f"{timestamp}_{shortcode}_01",
+        caption_text=caption_text,
+    )
+    return [candidate] if candidate is not None else []
+
+
+def _build_profile_requests_session(loader) -> requests.Session:
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/133.0.0.0 Safari/537.36"
+            ),
+            "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "*/*",
+        }
+    )
+
+    loader_session = getattr(loader.context, "_session", None)
+    if loader_session is not None:
+        user_agent = loader_session.headers.get("User-Agent")
+        if user_agent:
+            session.headers["User-Agent"] = user_agent
+
+        for cookie in loader_session.cookies:
+            session.cookies.set(
+                cookie.name,
+                cookie.value,
+                domain=cookie.domain,
+                path=cookie.path,
+            )
+
+        for cookie in loader_session.cookies:
+            if cookie.name == "csrftoken" and "instagram" in (cookie.domain or ""):
+                session.headers["X-CSRFToken"] = cookie.value
+                break
+
+    return session
+
+
 def _collect_files(directory: Path) -> set[Path]:
     if not directory.exists():
         return set()
@@ -180,20 +374,143 @@ def _collect_files(directory: Path) -> set[Path]:
     return {path.resolve() for path in directory.rglob("*") if path.is_file()}
 
 
-def _download_profile_feed(loader, profile, feed, limit: int | None, fast_update: bool) -> int:
-    processed_count = 0
+def _iter_profile_feed_items(
+    session: requests.Session,
+    profile_name: str,
+    profile_url: str,
+    limit_posts: int | None,
+) -> Iterable[dict]:
+    fetched_posts = 0
+    next_max_id: str | None = None
+    seen_shortcodes: set[str] = set()
 
-    for post in feed:
-        if limit is not None and processed_count >= limit:
-            break
+    while True:
+        remaining = (limit_posts - fetched_posts) if limit_posts else 12
+        page_size = min(12, remaining) if limit_posts else 12
+        if page_size <= 0:
+            return
 
-        downloaded = loader.download_post(post, profile.username)
-        processed_count += 1
+        params = {"count": page_size}
+        if next_max_id:
+            params["max_id"] = next_max_id
 
-        if fast_update and not downloaded:
-            break
+        response = session.get(
+            f"https://www.instagram.com/api/v1/feed/user/{profile_name}/username/",
+            params=params,
+            headers={"Referer": profile_url},
+            timeout=120,
+        )
 
-    return processed_count
+        if response.status_code == 429:
+            raise RuntimeError(
+                "Instagram dang gioi han toc do profile feed API (429 Too Many Requests). Thu lai sau it phut."
+            )
+        if response.status_code in {401, 403}:
+            raise RuntimeError(
+                "Instagram tu choi profile feed API. Thu cookie/session khac hoac doi mot luc roi thu lai."
+            )
+        response.raise_for_status()
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Instagram tra ve JSON khong hop le cho profile feed.") from exc
+
+        status = str(payload.get("status") or "").lower()
+        if status == "fail":
+            message = str(payload.get("message") or "Instagram profile feed API failed.")
+            raise RuntimeError(message)
+
+        items = payload.get("items") or []
+        if not isinstance(items, list):
+            raise RuntimeError("Instagram profile feed API tra ve du lieu khong nhu mong doi.")
+
+        for item in items:
+            shortcode = item.get("code")
+            if not shortcode or shortcode in seen_shortcodes:
+                continue
+            seen_shortcodes.add(shortcode)
+            fetched_posts += 1
+            yield item
+
+            if limit_posts and fetched_posts >= limit_posts:
+                return
+
+        next_max_id = payload.get("next_max_id")
+        if not payload.get("more_available") or not next_max_id:
+            return
+
+
+def _detect_existing_media_file(directory: Path, file_stem: str) -> Path | None:
+    for file_path in sorted(directory.glob(f"{file_stem}.*")):
+        if file_path.suffix.lower() in SUPPORTED_MEDIA_SUFFIXES and file_path.is_file():
+            return file_path.resolve()
+    return None
+
+
+def _choose_media_extension(content_type: str, media_url: str, media_kind: str) -> str:
+    mime_type = content_type.split(";", 1)[0].strip().lower()
+    extension = mimetypes.guess_extension(mime_type) if mime_type else None
+    if extension == ".jpe":
+        extension = ".jpg"
+    if extension in SUPPORTED_MEDIA_SUFFIXES:
+        return extension
+
+    parsed_extension = Path(urlparse(media_url).path).suffix.lower()
+    if parsed_extension in SUPPORTED_MEDIA_SUFFIXES:
+        return ".jpg" if parsed_extension == ".jpeg" else parsed_extension
+
+    return ".mp4" if media_kind == "video" else ".jpg"
+
+
+def _download_http_asset(
+    session: requests.Session,
+    asset_url: str,
+    directory: Path,
+    file_stem: str,
+    media_kind: str,
+) -> tuple[Path, bool]:
+    existing_file = _detect_existing_media_file(directory, file_stem)
+    if existing_file is not None:
+        return existing_file, False
+
+    directory.mkdir(parents=True, exist_ok=True)
+    response = session.get(asset_url, stream=True, timeout=120)
+    response.raise_for_status()
+
+    content_type = response.headers.get("Content-Type", "")
+    extension = _choose_media_extension(content_type, asset_url, media_kind)
+    output_path = (directory / f"{file_stem}{extension}").resolve()
+    temp_path = output_path.with_suffix(output_path.suffix + ".part")
+
+    try:
+        with temp_path.open("wb") as file_handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    file_handle.write(chunk)
+        temp_path.replace(output_path)
+    finally:
+        response.close()
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+    return output_path, True
+
+
+def _write_caption_file(directory: Path, file_stem: str, caption_text: str | None) -> Path | None:
+    if not caption_text:
+        return None
+
+    directory.mkdir(parents=True, exist_ok=True)
+    caption_path = (directory / f"{file_stem}.txt").resolve()
+    if caption_path.is_file():
+        try:
+            if caption_path.read_text(encoding="utf-8") == caption_text:
+                return None
+        except OSError:
+            pass
+    caption_path.write_text(caption_text, encoding="utf-8")
+    return caption_path
 
 
 def _merge_results(target: DownloadResult, source: DownloadResult) -> None:
@@ -455,6 +772,7 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
 
     try:
         active_login_user = _login_instaloader(loader, options)
+        feed_session = _build_profile_requests_session(loader)
 
         for target in targets:
             profile_name = target.value
@@ -487,30 +805,56 @@ def _download_profile_targets(targets: list[DownloadTarget], options: DownloadOp
                 if options.include_profile_pic:
                     loader.download_profilepic(profile)
 
-                remaining = options.profile_limit
-                processed_posts = _download_profile_feed(
-                    loader,
-                    profile,
-                    profile.get_posts(),
-                    remaining,
-                    options.fast_update,
-                )
+                profile_url = f"https://www.instagram.com/{profile.username}/"
+                for item in _iter_profile_feed_items(
+                    session=feed_session,
+                    profile_name=profile.username,
+                    profile_url=profile_url,
+                    limit_posts=options.profile_limit,
+                ):
+                    candidates = _iter_feed_item_media(item, options.include_profile_reels)
+                    if not candidates:
+                        continue
 
-                if remaining is not None:
-                    remaining = max(remaining - processed_posts, 0)
+                    downloaded_any_for_post = False
+                    for candidate in candidates:
+                        _, downloaded_new_media = _download_http_asset(
+                            session=feed_session,
+                            asset_url=candidate.media_url,
+                            directory=target_directory,
+                            file_stem=candidate.file_stem,
+                            media_kind=candidate.media_kind,
+                        )
+                        downloaded_any_for_post = downloaded_any_for_post or downloaded_new_media
 
-                if options.include_profile_reels and (remaining is None or remaining > 0):
-                    _download_profile_feed(
-                        loader,
-                        profile,
-                        profile.get_reels(),
-                        remaining,
-                        options.fast_update,
-                    )
+                        if options.write_thumbnail and candidate.thumbnail_url:
+                            _, downloaded_thumbnail = _download_http_asset(
+                                session=feed_session,
+                                asset_url=candidate.thumbnail_url,
+                                directory=target_directory,
+                                file_stem=f"{candidate.file_stem}_thumbnail",
+                                media_kind="image",
+                            )
+                            downloaded_any_for_post = downloaded_any_for_post or downloaded_thumbnail
+
+                    if options.write_caption:
+                        caption_path = _write_caption_file(
+                            directory=target_directory,
+                            file_stem=candidates[0].file_stem.rsplit("_", 1)[0],
+                            caption_text=candidates[0].caption_text,
+                        )
+                        downloaded_any_for_post = downloaded_any_for_post or caption_path is not None
+
+                    if options.fast_update and not downloaded_any_for_post:
+                        break
             except PrivateProfileNotFollowedException as exc:
                 raise RuntimeError(
                     f"Profile `{profile.username}` la private hoac can dang nhap. Thu lai voi `--login <instagram_username>`."
                 ) from exc
+            except requests.HTTPError as exc:
+                raise RuntimeError(f"Tai profile `{profile.username}` that bai: {exc}") from exc
+            except RuntimeError:
+                raise
             except (LoginException, ConnectionException, InstaloaderException) as exc:
                 raise RuntimeError(f"Tai profile `{profile.username}` that bai: {exc}") from exc
             except Exception as exc:

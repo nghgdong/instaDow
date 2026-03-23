@@ -111,6 +111,7 @@ instadow username --login your_instagram_username --session-file .\ig.session
 - Media URL truc tiep duoc tai bang `yt-dlp`.
 - Profile downloads duoc tai bang `instaloader`.
 - `--cookies-file` ho tro file cookie Netscape va co the duoc dung cho ca media URLs lan profile downloads.
+- Khi tai profile voi `--cookies-file`, tool uu tien goi Instagram profile feed API bang web session/cookies de on dinh hon GraphQL.
 - Profile downloads co the yeu cau dang nhap, ngay ca voi mot so profile public, do thay doi rate-limit va co che truy cap cua Instagram.
 - Lan dau dung `--login`, tool se thu nap session truoc. Neu chua co session, no se hoi mat khau tuong tac va luu session de dung lai sau do.
 - Session login da luu se duoc nho lai trong cau hinh local cua user de nhung lan sau khong can truyen lai `--login`.
